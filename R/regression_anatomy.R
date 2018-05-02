@@ -52,7 +52,7 @@ simpsons.example = function() {
 
   dat$org_x = dat[[xvar]]
 
-  df = add.tilde.xy(dat,yvar, xvar, cvar, adjust.xy="x")
+  df = add.tilde.xy(dat,NULL, yvar, xvar, cvar, adjust.xy="x")
 
 
   ggplot(data=df, aes_string(x=xvar, y=yvar, color=".dist.x", label="code")) + geom_text() + geom_smooth(method="lm") + facet_wrap(~.control) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
@@ -72,8 +72,15 @@ simpsons.example = function() {
 
 
 
-add.tilde.xy = function(dat, yvar, xvar, cvars,frames=NULL,  org.x.col = ".org.x", dist.x.col=".dist.x", frame.col=".frame", frame.ind.col=".frame.ind", control.ind.col = ".control.ind", control.col = ".control", adjust.col = ".adjust", control.label = paste0("control ", seq_along(cvars), ": ", cvars), no.control.label = "no control", adjust.control = c("sim","seq")[1], adjust.xy=c("seq","sim","x")[1], duplicate.org=FALSE) {
+rapa.data = function(dat, formula=NULL, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NULL,  org.x.col = ".org.x", dist.x.col=".dist.x", frame.col=".frame", frame.ind.col=".frame.ind", control.ind.col = ".control.ind", control.col = ".control", adjust.col = ".adjust", control.label = paste0("control ", seq_along(cvars), ": ", cvars), no.control.label = "no control", adjust.control = c("sim","seq")[1], adjust.xy=c("seq","sim","x")[1], duplicate.org=FALSE) {
   restore.point("add.tilde.xy")
+
+  if (!is.null(formula)) {
+    vars = all.vars(formula)
+    yvar = vars[1]
+    xvar = vars[2]
+    cvars = vars[-c(1:2)]
+  }
 
   if (adjust.xy == "x") yvar = NULL
   if (is.null(yvar)) adjust.xy = "x"
