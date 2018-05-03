@@ -26,21 +26,39 @@ example.electricity = function() {
   df = rapa.data(dat,yvar,xvar, cvars,ivars, adjust.xy="x", adjust.control = "sim")
 
 
+
+
   ggplot(data=df, aes_string(x=xvar, y=yvar, color=".dist.x")) + geom_point(alpha=0.5) + geom_smooth(method="lm") + facet_wrap(~.frame) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
 
-  rapa.animation(df,yvar,xvar, colorvar=".dist.x", transition=4000)
+  rows = sample(df$.ROW, 400)
+  d = filter(df, .ROW %in% rows)
 
+  rapa.animation(d,yvar,xvar, colorvar=".dist.x", transition=3000)
+}
+
+interpolate.frames = function(df,n=20, frames = levels(df$.frame), vars=colnames(df)) {
+  is.numeric = sapply(vars, function(var) is.numeric(df[[vars]]))
+  vars = vars[is.numeric]
+
+  w = seq(0,1, length.out = n)
 
 }
 
+
+
 rapa.animation = function(df,yvar, xvar, colorvar=c(".dist.x",".org.x")[1], midpoint = if(colorvar==".dist.x") 0 else mean(range(df[[colorvar]])), transition=3000,...) {
+
 
   p = ggplotly(
     ggplot(data=df, aes_string(x=xvar, y=yvar, color=colorvar, frame=".frame")) + geom_point() + geom_smooth(method="lm", se=FALSE) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
 
-  ) %>% config(displayModeBar = F) %>% animation_opts(frame = transition, transition = transition, easing = "linear", redraw = FALSE, mode = "immediate") %>% animation_button() %>% animation_slider(currentvalue = list(prefix = "", font = list(color="white")))
+  ) %>%
+    config(displayModeBar = F) %>% animation_opts(frame = transition, transition = transition, easing = "linear", redraw = FALSE, mode = "immediate") %>%
+  animation_slider(currentvalue = list(prefix = "", font = list(color="white")))
 
+  #p =  animation_button(p, x = 1, xanchor = "right", y = 0, yanchor = "bottom", showActive = FALSE)
   p
+
 
 }
 
@@ -135,6 +153,7 @@ rapa.data = function(dat, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NU
   li = vector("list", length(frames))
 
   i = 1
+  dat[[".ROW"]] = 1:NROW(dat)
   dat[[frame.col]] = frames[i]
   dat[[frame.ind.col]] = i
   dat[[control.col]] = no.control.label
