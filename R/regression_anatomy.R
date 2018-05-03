@@ -11,29 +11,55 @@ example.electricity = function() {
   dat$wday = weekdays(dat$date)
   dat$month = as.factor(lubridate::month(dat$date))
 
+  dat$h_m = paste0(dat$month,"_", dat$h)
+  dat$h_w = paste0(dat$wday, "_", dat$h)
+
+  #dat$h_so = paste0(dat$wday=="Sonntag","_", dat$h)
+  #dat$h_sa = paste0(dat$wday=="Samstag","_", dat$h)
+
+
   colnames(dat)
   yvar = "load"
   xvar = "price"
-  cvars = c("h","wday","month")
+  cvars = c("h_m","h_w")
   ivars = c("wind")
 
 
   dat = na.omit(dat)
 
-  lm(load~price+h+wday+month, data=dat)
-  AER::ivreg(load~price+h+wday+month|wind+h+wday+month, data=dat)
-
-  df = rapa.data(dat,yvar,xvar, cvars,ivars, adjust.xy="x", adjust.control = "sim")
 
 
 
+  # First control
+  d = dat
+  d$price = anatomy.tilde.value(dat$price,dat[c("h","wday","month")])
+  coef(lm(load~price, data=d))[2]
+  # LM directly
+  coef(lm(load~price+h+wday+month, data=dat))[2]
 
-  ggplot(data=df, aes_string(x=xvar, y=yvar, color=".dist.x")) + geom_point(alpha=0.5) + geom_smooth(method="lm") + facet_wrap(~.frame) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
+  # Now IV (where we have already controlled p)
+  d$p.hat = fitted(lm(price~wind+h+wday+month, data=d))
+  coef(lm(load ~ p.hat, data=d))[2]
 
-  rows = sample(df$.ROW, 400)
+  # IV directly
+  coef(AER::ivreg(load~price+h+wday+month|wind+h+wday+month, data=dat))[2]
+
+    coef(AER::ivreg(load~price+h_w+h_m|wind+h_m+h_w, data=dat))[2]
+
+
+
+  df = rapa.data(dat,yvar,xvar, cvars,ivars, adjust.xy="x", adjust.control = "seq")
+
+
+  ggplot(data=df, aes_string(x=xvar, y=yvar, color="wind")) + geom_point(alpha=0.5) + geom_smooth(method="lm") + facet_wrap(~.frame) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = mean(range(df$wind))) + theme_bw()
+
+
+  ggplot(data=df, aes_string(x=xvar, y=yvar, color=".x.dist")) + geom_point(alpha=0.5) + geom_smooth(method="lm") + facet_wrap(~.frame) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
+
+  rows = sample(df$.ROW, 1000)
   d = filter(df, .ROW %in% rows)
 
-  rapa.animation(d,yvar,xvar, colorvar=".dist.x", transition=3000)
+  rapa.animation(d,yvar,xvar, colorvar="wind", transition=3000)
 }
 
 interpolate.frames = function(df,n=20, frames = levels(df$.frame), vars=colnames(df)) {
@@ -47,10 +73,11 @@ interpolate.frames = function(df,n=20, frames = levels(df$.frame), vars=colnames
 
 
 rapa.animation = function(df,yvar, xvar, colorvar=c(".dist.x",".org.x")[1], midpoint = if(colorvar==".dist.x") 0 else mean(range(df[[colorvar]])), transition=3000,...) {
+  restore.point("rapa.animation")
 
 
   p = ggplotly(
-    ggplot(data=df, aes_string(x=xvar, y=yvar, color=colorvar, frame=".frame")) + geom_point() + geom_smooth(method="lm", se=FALSE) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
+    ggplot(data=df, aes_string(x=xvar, y=yvar, color=colorvar, frame=".frame")) + geom_point() + geom_smooth(method="lm", se=FALSE) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = midpoint) + theme_bw()
 
   ) %>%
     config(displayModeBar = F) %>% animation_opts(frame = transition, transition = transition, easing = "linear", redraw = FALSE, mode = "immediate") %>%
@@ -130,9 +157,6 @@ rapa.data = function(dat, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NU
         stop("Unknown adjust.xy argument.")
       }
     } else if (adjust.control=="seq") {
-      if (!is.null(ivars)) {
-        frames = c(frames, "instrument")
-      }
       if (adjust.xy == "seq") {
         grid = expand.grid(c("x","y"), cvars)
         frames = c(frames,paste0("control ", grid[,1], " ", grid[,2]))
@@ -143,6 +167,10 @@ rapa.data = function(dat, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NU
       } else {
         stop("Unknown adjust.xy argument.")
       }
+      if (!is.null(ivars)) {
+        frames = c(frames, "instrument")
+      }
+
     } else {
       stop("Unknown adjust.control argument.")
     }
@@ -177,21 +205,6 @@ rapa.data = function(dat, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NU
 
 
   if (adjust.control == "seq") {
-    if (!is.null(ivars)) {
-      # Account for instruments
-      # Stage 1 of 2SLS
-      form = as.formula(paste0(xvar, "~", paste0(c(cvars, ivars), collapse="+")))
-      reg1 = lm(form, data=dat)
-      dat[[xvar]] = fitted(reg1)
-      dat[[control.col]] = instrument.label
-      dat[[adjust.col]] = "x_iv"
-      i = i +1
-      dat[[frame.col]] = frames[i]
-      dat[[frame.ind.col]] = i
-      dat[[dist.x.col]] = dat[[xvar]] - dat[[org.x.col]]
-
-      li[[i]] = dat
-    }
 
 
     for (cvar.ind in seq_along(cvars)) {
@@ -223,6 +236,25 @@ rapa.data = function(dat, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NU
         li[[i]] = dat
       }
     }
+
+
+    if (!is.null(ivars)) {
+      # Account for instruments
+      # Stage 1 of 2SLS
+      form = as.formula(paste0(xvar, "~", paste0(c(cvars, ivars), collapse="+")))
+      reg1 = lm(form, data=dat)
+      dat[[xvar]] = fitted(reg1)
+      dat[[control.col]] = instrument.label
+      dat[[adjust.col]] = "x_iv"
+      i = i +1
+      dat[[frame.col]] = frames[i]
+      dat[[frame.ind.col]] = i
+      dat[[dist.x.col]] = dat[[xvar]] - dat[[org.x.col]]
+
+      li[[i]] = dat
+    }
+
+
   # Add simultaneously all controls
   } else {
     d = dat
