@@ -1,40 +1,49 @@
-example.regression.anatomy = function() {
+example.electricity = function() {
   setwd("D:/libraries/rapa")
-  dat = foreign::read.dta("intdata.dta")
+  library(readr)
+  dat <- read_csv("DE_2014_Electricity.csv")
 
-  library(dplyr)
-  dat = mutate(dat, log_top1 = log(top1), log_mtr = log(mtr), Year = as.factor(year))# %>% filter(year == 2005)
-  reg1 = lm(log_top1 ~ log_mtr, data=dat)
-  reg2 = lm(log_top1 ~ log_mtr + gdpcap, data=dat)
+  #dat = dat[1:(24*90),]
 
-  yvar = "log_top1"
-  cvar = c("log_mtr","Year")
-  xvar = "gdpcap"
+  #dat = sample_n(dat, 1000)
+
+  dat$h = as.factor(dat$hour)
+  dat$wday = weekdays(dat$date)
+  dat$month = as.factor(lubridate::month(dat$date))
+
+  colnames(dat)
+  yvar = "load"
+  xvar = "price"
+  cvars = c("h","wday","month")
+  ivars = c("wind")
+
 
   dat = na.omit(dat)
 
-  dat$org_y = dat[[yvar]]
-  df = add.tilde.xy(dat,yvar, xvar, cvar)
+  lm(load~price+h+wday+month, data=dat)
+  AER::ivreg(load~price+h+wday+month|wind+h+wday+month, data=dat)
+
+  df = rapa.data(dat,yvar,xvar, cvars,ivars, adjust.xy="x", adjust.control = "sim")
 
 
+  ggplot(data=df, aes_string(x=xvar, y=yvar, color=".dist.x")) + geom_point(alpha=0.5) + geom_smooth(method="lm") + facet_wrap(~.frame) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
 
-
-  ggplot(data=df, aes_string(x=xvar, y=yvar, color="country")) + geom_point() + geom_smooth(method="lm", color="black") + facet_wrap(~.control)
-
-
-  ggplot(data=df, aes_string(x=xvar, y=yvar, color="org_y")) + geom_point() + geom_smooth(method="lm", color="black") + facet_wrap(~.control) + scale_colour_gradient()
-
-  plot()
-
-  yreg = lm(log_top1 ~ gdpcap)
-
-  dat$y.tilde = resid()
-
-  gg = ggplot()
-
+  rapa.animation(df,yvar,xvar, colorvar=".dist.x", transition=4000)
 
 
 }
+
+rapa.animation = function(df,yvar, xvar, colorvar=c(".dist.x",".org.x")[1], midpoint = if(colorvar==".dist.x") 0 else mean(range(df[[colorvar]])), transition=3000,...) {
+
+  p = ggplotly(
+    ggplot(data=df, aes_string(x=xvar, y=yvar, color=colorvar, frame=".frame")) + geom_point() + geom_smooth(method="lm", se=FALSE) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
+
+  ) %>% config(displayModeBar = F) %>% animation_opts(frame = transition, transition = transition, easing = "linear", redraw = FALSE, mode = "immediate") %>% animation_button() %>% animation_slider(currentvalue = list(prefix = "", font = list(color="white")))
+
+  p
+
+}
+
 
 simpsons.example = function() {
   dat = mosaicData::SAT
@@ -52,7 +61,7 @@ simpsons.example = function() {
 
   dat$org_x = dat[[xvar]]
 
-  df = add.tilde.xy(dat,NULL, yvar, xvar, cvar, adjust.xy="x")
+  df = rapa.data(dat,NULL, yvar, xvar, cvar, adjust.xy="x")
 
 
   ggplot(data=df, aes_string(x=xvar, y=yvar, color=".dist.x", label="code")) + geom_text() + geom_smooth(method="lm") + facet_wrap(~.control) + scale_colour_gradient2(low="#ff0000", high="#0000ff", mid="#000000", midpoint = 0) + theme_bw()
@@ -72,7 +81,9 @@ simpsons.example = function() {
 
 
 
-rapa.data = function(dat, formula=NULL, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NULL,  org.x.col = ".org.x", dist.x.col=".dist.x", frame.col=".frame", frame.ind.col=".frame.ind", control.ind.col = ".control.ind", control.col = ".control", adjust.col = ".adjust", control.label = paste0("control ", seq_along(cvars), ": ", cvars), no.control.label = "no control", adjust.control = c("sim","seq")[1], adjust.xy=c("seq","sim","x")[1], duplicate.org=FALSE) {
+
+
+rapa.data = function(dat, yvar=NULL, xvar=NULL, cvars=NULL,ivars=NULL, frames=NULL,  org.x.col = ".org.x", dist.x.col=".dist.x", frame.col=".frame", frame.ind.col=".frame.ind", control.ind.col = ".control.ind", control.col = ".control", adjust.col = ".adjust", control.label = paste0("control ", seq_along(cvars), ": ", cvars), no.control.label = "no control", instrument.label = "instrument",  adjust.control = c("sim","seq")[1], adjust.xy=c("seq","sim","x")[1], duplicate.org=FALSE, formula=NULL) {
   restore.point("add.tilde.xy")
 
   if (!is.null(formula)) {
@@ -101,13 +112,16 @@ rapa.data = function(dat, formula=NULL, yvar=NULL, xvar=NULL, cvars=NULL,ivars=N
         stop("Unknown adjust.xy argument.")
       }
     } else if (adjust.control=="seq") {
+      if (!is.null(ivars)) {
+        frames = c(frames, "instrument")
+      }
       if (adjust.xy == "seq") {
         grid = expand.grid(c("x","y"), cvars)
         frames = c(frames,paste0("control ", grid[,1], " ", grid[,2]))
       } else if (adjust.xy == "sim") {
         frames = c(frames,paste0("control ", cvars))
       } else if (adjust.xy == "x") {
-        frames = c(frames,paste0("control x", cvars))
+        frames = c(frames,paste0("control x ", cvars))
       } else {
         stop("Unknown adjust.xy argument.")
       }
@@ -144,6 +158,23 @@ rapa.data = function(dat, formula=NULL, yvar=NULL, xvar=NULL, cvars=NULL,ivars=N
 
 
   if (adjust.control == "seq") {
+    if (!is.null(ivars)) {
+      # Account for instruments
+      # Stage 1 of 2SLS
+      form = as.formula(paste0(xvar, "~", paste0(c(cvars, ivars), collapse="+")))
+      reg1 = lm(form, data=dat)
+      dat[[xvar]] = fitted(reg1)
+      dat[[control.col]] = instrument.label
+      dat[[adjust.col]] = "x_iv"
+      i = i +1
+      dat[[frame.col]] = frames[i]
+      dat[[frame.ind.col]] = i
+      dat[[dist.x.col]] = dat[[xvar]] - dat[[org.x.col]]
+
+      li[[i]] = dat
+    }
+
+
     for (cvar.ind in seq_along(cvars)) {
       cvar = cvars[cvar.ind]
       d = dat
@@ -177,13 +208,21 @@ rapa.data = function(dat, formula=NULL, yvar=NULL, xvar=NULL, cvars=NULL,ivars=N
   } else {
     d = dat
 
-    dat[[xvar]] = anatomy.tilde.value(dat[[xvar]],dat[cvar])
+    if (!is.null(ivars)) {
+      # Account for instruments
+      # Stage 1 of 2SLS
+      form = paste0(xvar, "~", paste0(c(cvars, ivars), collapse="+"))
+      reg1 = lm(form, data=dat)
+      dat[[xvar]] = fitted(reg1)
+    }
+
+    dat[[xvar]] = anatomy.tilde.value(dat[[xvar]],dat[cvars])
     dat[[control.col]] = "control"
     dat[[control.ind.col]] = 1
     dat[[dist.x.col]] = dat[[xvar]] - dat[[org.x.col]]
 
     if (adjust.xy == "sim") {
-      dat[[yvar]] = anatomy.tilde.value(dat[[yvar]],dat[cvar])
+      dat[[yvar]] = anatomy.tilde.value(dat[[yvar]],dat[cvars])
       dat[[adjust.col]] = "xy"
     } else {
       dat[[adjust.col]] = "x"
@@ -216,7 +255,8 @@ rapa.data = function(dat, formula=NULL, yvar=NULL, xvar=NULL, cvars=NULL,ivars=N
 }
 
 
-anatomy.tilde.value = function(val, control, add.mean = TRUE) {
+anatomy.tilde.value = function(val, control, instruments=NULL, add.mean = TRUE) {
+
   if (is.data.frame(control)) {
     has.factor = any(sapply(control, function(x) is.factor(x) | is.character(x)))
     if (!has.factor) {
@@ -228,6 +268,7 @@ anatomy.tilde.value = function(val, control, add.mean = TRUE) {
       control = data.frame(var=control)
     }
   }
+
 
   if (is.data.frame(control)) {
     formula = as.formula(paste0("val ~ ", paste0("control$", colnames(control), collapse=" + ")))
